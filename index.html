@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en" x-data="chatApp()" :class="theme === 'dark' ? 'dark' : ''">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nexus AI Pro - Universal Interface</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.2/marked.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github-dark.min.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: { extend: { colors: { accent: '#6366f1', glass: 'rgba(255, 255, 255, 0.03)' } } }
+        }
+    </script>
+    <style>
+        [x-cloak] { display: none !important; }
+        .glass-panel { backdrop-filter: blur(16px); background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); }
+        .dark .glass-panel { background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.1); }
+        body { transition: background-color 0.3s ease; }
+        .code-block { position: relative; margin: 1rem 0; }
+        .code-lang { position: absolute; top: 0; right: 0; padding: 2px 8px; font-size: 10px; color: #888; text-transform: uppercase; }
+    </style>
+</head>
+<body class="bg-zinc-50 dark:bg-[#09090b] text-zinc-900 dark:text-zinc-100 h-screen overflow-hidden flex font-sans">
+
+    <aside x-show="sidebar" x-transition class="w-72 border-r border-zinc-200 dark:border-zinc-800 flex flex-col glass-panel z-20">
+        <div class="p-4 flex items-center justify-between border-b border-zinc-200 dark:border-zinc-800">
+            <span class="font-bold tracking-tighter text-xl">NEXUS<span class="text-accent">AI</span></span>
+            <button @click="newChat()" class="p-2 hover:bg-zinc-200 dark:hover:bg-zinc-800 rounded-lg transition"><i class="fas fa-edit"></i></button>
+        </div>
+        
+        <div class="flex-1 overflow-y-auto p-3 space-y-2 scrollbar-hide">
+            <template x-for="chat in history" :key="chat.id">
+                <div @click="loadChat(chat.id)" :class="currentChatId === chat.id ? 'bg-accent/10 border-accent/20 text-accent' : 'hover:bg-zinc-100 dark:hover:bg-zinc-800'" class="p-3 rounded-xl cursor-pointer border border-transparent transition group flex items-center justify-between">
+                    <div class="flex items-center gap-3 truncate">
+                        <i class="far fa-message text-xs opacity-50"></i>
+                        <span class="text-sm truncate" x-text="chat.title"></span>
+                    </div>
+                    <button @click.stop="deleteChat(chat.id)" class="opacity-0 group-hover:opacity-100 hover:text-red-500"><i class="fas fa-trash-alt text-xs"></i></button>
+                </div>
+            </template>
+        </div>
+
+        <div class="p-4 border-t border-zinc-200 dark:border-zinc-800 space-y-2">
+            <button @click="toggleTheme()" class="w-full flex items-center gap-3 p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg transition text-sm">
+                <i :class="theme === 'dark' ? 'fa-sun' : 'fa-moon'" class="fas w-5"></i>
+                <span x-text="theme === 'dark' ? 'Light Mode' : 'Dark Mode'"></span>
+            </button>
+            <button @click="settingsModal = true" class="w-full flex items-center gap-3 p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg transition text-sm">
+                <i class="fas fa-sliders w-5"></i> Settings
+            </button>
+        </div>
+    </aside>
+
+    <main class="flex-1 flex flex-col min-w-0 bg-white dark:bg-transparent">
+        <nav class="h-14 border-b border-zinc-200 dark:border-zinc-800 flex items-center px-6 justify-between">
+            <div class="flex items-center gap-4">
+                <button @click="sidebar = !sidebar" class="text-zinc-500 hover:text-zinc-900 dark:hover:text-white"><i class="fas fa-bars-staggered"></i></button>
+                <div class="flex items-center gap-2 bg-zinc-100 dark:bg-zinc-800 px-3 py-1 rounded-full border border-zinc-200 dark:border-zinc-700">
+                    <span class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
+                    <span class="text-xs font-medium opacity-70" x-text="config.model.split('/').pop()"></span>
+                </div>
+            </div>
+            <div class="flex gap-3">
+                <button @click="exportChat()" class="text-xs font-semibold px-3 py-1 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-md">Export JSON</button>
+            </div>
+        </nav>
+
+        <div id="scroll-area" class="flex-1 overflow-y-auto p-4 md:p-10 space-y-8 scroll-smooth">
+            <template x-for="(msg, i) in activeMessages" :key="i">
+                <div class="max-w-4xl mx-auto flex gap-6 group" :class="msg.role === 'user' ? 'flex-row-reverse' : ''">
+                    <div class="w-8 h-8 rounded-lg shrink-0 flex items-center justify-center border border-zinc-200 dark:border-zinc-700 shadow-sm"
+                         :class="msg.role === 'user' ? 'bg-accent text-white border-transparent' : 'bg-white dark:bg-zinc-800'">
+                        <i :class="msg.role === 'user' ? 'fa-user' : 'fa-robot'" class="fas text-[10px]"></i>
+                    </div>
+                    <div class="flex flex-col gap-2 max-w-[80%]">
+                        <div class="prose prose-zinc dark:prose-invert max-w-none text-[15px] leading-relaxed" 
+                             x-html="renderContent(msg.content)"></div>
+                        <div class="flex gap-4 opacity-0 group-hover:opacity-100 transition text-[10px] uppercase font-bold text-zinc-400">
+                            <button @click="copy(msg.content)" class="hover:text-accent">Copy</button>
+                            <span x-show="msg.role !== 'user'">Tokens: ~<span x-text="Math.floor(msg.content.length / 4)"></span></span>
+                        </div>
+                    </div>
+                </div>
+            </template>
+            <div x-show="loading" class="max-w-4xl mx-auto flex gap-6 items-center text-zinc-400 italic text-sm animate-pulse">
+                <div class="w-8 h-8 rounded-lg bg-zinc-100 dark:bg-zinc-800 border border-dashed border-zinc-300 dark:border-zinc-600"></div>
+                Thinking...
+            </div>
+        </div>
+
+        <div class="p-6 border-t border-zinc-200 dark:border-zinc-800 bg-white/50 dark:bg-transparent backdrop-blur-xl">
+            <div class="max-w-4xl mx-auto relative group">
+                <div class="absolute inset-0 bg-accent/5 blur-xl rounded-2xl group-focus-within:bg-accent/10 transition-all"></div>
+                <div class="relative bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl shadow-2xl p-2 flex flex-col gap-2">
+                    <textarea x-model="input" @keydown.enter.prevent="if(!$event.shiftKey) send()" rows="1"
+                        placeholder="Ask Nexus anything..." 
+                        class="w-full bg-transparent p-3 outline-none resize-none text-sm min-h-[50px] max-h-48"></textarea>
+                    <div class="flex justify-between items-center px-2 pb-1">
+                        <div class="flex gap-2">
+                            <button class="p-2 text-zinc-400 hover:text-accent transition"><i class="fas fa-paperclip text-sm"></i></button>
+                            <button class="p-2 text-zinc-400 hover:text-accent transition"><i class="fas fa-globe text-sm"></i></button>
+                        </div>
+                        <button @click="send()" :disabled="!input.trim()" class="bg-accent hover:bg-accent/90 disabled:opacity-30 text-white px-4 py-1.5 rounded-xl text-sm font-bold transition flex items-center gap-2">
+                            <span x-show="!loading">Send</span>
+                            <i x-show="loading" class="fas fa-spinner fa-spin"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <div x-show="settingsModal" x-cloak class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-md p-4">
+        <div @click.away="settingsModal = false" class="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 w-full max-w-lg rounded-3xl overflow-hidden shadow-2xl">
+            <div class="p-6 border-b border-zinc-100 dark:border-zinc-800 flex justify-between items-center">
+                <h3 class="font-bold text-lg">System Configuration</h3>
+                <button @click="settingsModal = false" class="text-zinc-400 hover:text-zinc-900"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="p-8 space-y-6">
+                <div class="space-y-2">
+                    <label class="text-[11px] font-bold uppercase tracking-widest text-zinc-400">OpenRouter API Key</label>
+                    <input type="password" x-model="config.apiKey" placeholder="sk-or-v1-..." class="w-full bg-zinc-50 dark:bg-black border border-zinc-200 dark:border-zinc-800 p-3 rounded-xl focus:ring-2 ring-accent/20 outline-none text-sm">
+                </div>
+                <div class="space-y-2">
+                    <label class="text-[11px] font-bold uppercase tracking-widest text-zinc-400">Select Model</label>
+                    <select x-model="config.model" class="w-full bg-zinc-50 dark:bg-black border border-zinc-200 dark:border-zinc-800 p-3 rounded-xl outline-none text-sm">
+                        <option value="google/gemini-2.0-flash-exp:free">Gemini 2.0 Flash (Free)</option>
+                        <option value="anthropic/claude-3.5-sonnet">Claude 3.5 Sonnet</option>
+                        <option value="openai/gpt-4o">GPT-4o</option>
+                        <option value="meta-llama/llama-3.1-405b">Llama 3.1 405B</option>
+                    </select>
+                </div>
+            </div>
+            <div class="p-6 bg-zinc-50 dark:bg-zinc-950 flex gap-4">
+                <button @click="saveSettings()" class="flex-1 bg-accent text-white font-bold py-3 rounded-xl hover:shadow-lg hover:shadow-accent/20 transition">Apply Changes</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+    <script>
+        function chatApp() {
+            return {
+                sidebar: true,
+                theme: localStorage.getItem('theme') || 'dark',
+                settingsModal: false,
+                loading: false,
+                input: '',
+                currentChatId: null,
+                activeMessages: [],
+                history: JSON.parse(localStorage.getItem('nexus_history') || '[]'),
+                config: JSON.parse(localStorage.getItem('nexus_config') || '{"apiKey":"","model":"google/gemini-2.0-flash-exp:free"}'),
+
+                init() {
+                    if (this.history.length > 0) this.loadChat(this.history[0].id);
+                    else this.newChat();
+                    marked.setOptions({
+                        highlight: function(code, lang) {
+                            return hljs.highlightAuto(code).value;
+                        }
+                    });
+                },
+
+                toggleTheme() {
+                    this.theme = this.theme === 'dark' ? 'light' : 'dark';
+                    localStorage.setItem('theme', this.theme);
+                },
+
+                newChat() {
+                    this.currentChatId = Date.now();
+                    this.activeMessages = [{ role: 'assistant', content: "Hello! I'm Nexus. How can I assist you today?" }];
+                    this.input = '';
+                },
+
+                loadChat(id) {
+                    const chat = this.history.find(h => h.id === id);
+                    if (chat) {
+                        this.currentChatId = id;
+                        this.activeMessages = chat.messages;
+                    }
+                },
+
+                async send() {
+                    if (!this.input.trim() || !this.config.apiKey) return;
+                    
+                    const userMsg = { role: 'user', content: this.input };
+                    this.activeMessages.push(userMsg);
+                    this.loading = true;
+                    const prompt = this.input;
+                    this.input = '';
+
+                    try {
+                        const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+                            method: "POST",
+                            headers: {
+                                "Authorization": `Bearer ${this.config.apiKey}`,
+                                "Content-Type": "application/json"
+                            },
+                            body: JSON.stringify({
+                                model: this.config.model,
+                                messages: this.activeMessages
+                            })
+                        });
+                        const data = await res.json();
+                        const aiMsg = { role: 'assistant', content: data.choices[0].message.content };
+                        this.activeMessages.push(aiMsg);
+                        this.syncHistory();
+                    } catch (e) {
+                        this.activeMessages.push({ role: 'assistant', content: "⚠️ **System Error:** Connection failed. Check API Key." });
+                    } finally {
+                        this.loading = false;
+                        this.scrollToBottom();
+                    }
+                },
+
+                syncHistory() {
+                    const idx = this.history.findIndex(h => h.id === this.currentChatId);
+                    const chatData = {
+                        id: this.currentChatId,
+                        title: this.activeMessages.find(m => m.role === 'user')?.content.substring(0, 30) || 'New Chat',
+                        messages: this.activeMessages
+                    };
+                    if (idx > -1) this.history[idx] = chatData;
+                    else this.history.unshift(chatData);
+                    localStorage.setItem('nexus_history', JSON.stringify(this.history));
+                },
+
+                deleteChat(id) {
+                    this.history = this.history.filter(h => h.id !== id);
+                    localStorage.setItem('nexus_history', JSON.stringify(this.history));
+                    if (this.currentChatId === id) this.newChat();
+                },
+
+                saveSettings() {
+                    localStorage.setItem('nexus_config', JSON.stringify(this.config));
+                    this.settingsModal = false;
+                },
+
+                renderContent(content) {
+                    return marked.parse(content);
+                },
+
+                scrollToBottom() {
+                    setTimeout(() => {
+                        const el = document.getElementById('scroll-area');
+                        el.scrollTop = el.scrollHeight;
+                    }, 50);
+                },
+
+                copy(text) {
+                    navigator.clipboard.writeText(text);
+                },
+
+                exportChat() {
+                    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(this.activeMessages));
+                    const dlAnchorElem = document.createElement('a');
+                    dlAnchorElem.setAttribute("href", dataStr);
+                    dlAnchorElem.setAttribute("download", `chat_${this.currentChatId}.json`);
+                    dlAnchorElem.click();
+                }
+            }
+        }
+    </script>
+</body>
+</html>
